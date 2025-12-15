@@ -1,4 +1,4 @@
-name: Deploy React App to EC2
+name: CI/CD for Node.js Docker Application
 
 on:
   push:
@@ -6,20 +6,39 @@ on:
       - main
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Docker Hub Login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_ACCESS_TOKEN }}
+
+      - name: Build and push Docker image
+        run: |
+          docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_ACCESS_TOKEN }}
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/newapp:latest .
+          docker push ${{ secrets.DOCKER_USERNAME }}/newapp:latest
+
   deploy:
     runs-on: ubuntu-latest
+    needs: build
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
       - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.EC2_HOST }}
+          host: ${{ secrets.EC2_HOST}}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd testapp/
-            git pull origin main
-            npm install
-            npm run build
-            pm2 restart newapp
+            docker pull ${{ secrets.DOCKER_USERNAME }}/newapp:latest
+            docker stop newapp || true
+            docker rm newapp || true
+            docker run -d -p 5173:4173 --name newapp ${{ secrets.DOCKER_USERNAME }}/newapp:latest
+
